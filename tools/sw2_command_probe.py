@@ -38,7 +38,7 @@ async def main():
                 reply = await asyncio.wait_for(queue.get(),5)
             except asyncio.TimeoutError:
                 debug=await client.read_gatt_char('ab7de9be-89fe-49ad-828f-118f09df7fde')
-                print('Device diagnostic (handle,len,replylen,status,stage):',debug.hex(' '),flush=True)
+                print('Device diagnostic (see tools/sw2_diag.py for the layout):',debug.hex(' '),flush=True)
                 raise
             assert reply[:22] == bytes(14)+bytes([cmd,1,1,sub,0x10,0x78,0,0]),reply.hex()
             print(f'PASS {cmd:02x}/{sub:02x}: wrote {len(request)}, received {len(reply)} bytes',flush=True)
@@ -64,7 +64,7 @@ async def main():
             try: r=await asyncio.wait_for(reports.get(),2)
             except asyncio.TimeoutError:
                 debug=await client.read_gatt_char('ab7de9be-89fe-49ad-828f-118f09df7fde')
-                raise SystemExit('no input report; diagnostic '+debug.hex(' '))
+                raise SystemExit('no input report; diagnostic '+debug.hex(' ')+' (decode with tools/sw2_diag.py)')
             assert len(r)==63 and r[1]==0x20 and r[11]==0x38 and r[14]==0x28, r.hex()
             count+=1
             if last is not None: assert r[0]==(last[0]+1)&0xff, 'counter skipped'

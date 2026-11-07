@@ -364,3 +364,34 @@ from the flashed image in three ways, all in `src/sw2/sw2.c`:
 It is built and verified but NOT flashed: the user's last allowed load was used
 on the first candidate. Flash only if the user lifts that rule; the flashed image
 is functionally equivalent for the console path (encryption gate, retry queue).
+
+### Candidate 3 flashed (Claude, 2026-11-07 ~12:05) - console result pending
+
+Console test of the first candidate FAILED (vibrate + solid LED = LL connection
+only; no icon in Change Grip/Order). Its 8-byte diagnostic was overwritten by
+Windows' Service Changed CCCD write, so nothing was learned. Candidate 3
+(`firmware/mod-sw2-candidate-3-v109.bin`, SHA256 e126d35c75d3a77c...) =
+candidate 2 plus a sticky post-mortem record:
+
+- Char 0x26 now exposes a 15-byte record at 0x846fb8, cleared only at boot:
+  last command handle/cmd/sub, last reply notify status, counts of accepted
+  commands and sent replies, last event code, last CCCD handle, LTK request
+  outcome and fw_ltkReply return, encryption-started flag, bond save result,
+  effective ATT MTU at the last command, last disconnect reason, pairing stage
+  high-water. Layout documented at the top of `src/sw2/sw2.c`.
+- CCCD RAM moved to 0x846fc7..0x846fd6 (record 15 + CCCDs 16 = the 31-byte
+  audited scratch, nothing outside it). Verifier updated.
+- Carries candidate 2 changes: input streams without link encryption (PC can
+  verify mapping), stock normal-mode advertisement, `0x844d94 = 0` on connect
+  (no 300 ms notify hold-off after the console's service discovery; the console
+  DOES read the table during discovery per SWITCH2_PROTOCOL.md item 8, so the
+  first candidate's first reply was delayed up to 300 ms - leading hypothesis
+  for the console failure).
+- Flashed over normal-mode USB, 4 sectors written and verified, c4/07 OK.
+- Host suites (runtime/protocol/session/crypto) pass; runtime test caught the
+  record/CCCD overlap in the first build of this candidate.
+
+Procedure: boot with Y held -> `tools/sw2_command_probe.py` (transport, 150-byte
+reply, then 15 s of decoded input reports: press buttons / move sticks) ->
+console Change Grip/Order with L+R -> on failure, do NOT power off, run
+`tools/sw2_diag.py` and paste its output into the notes.

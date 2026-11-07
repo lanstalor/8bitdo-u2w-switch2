@@ -8,9 +8,9 @@ block lives in RAM and is overwritten only by the next command/LTK/bond event):
 It prints two things:
   1. Advertisement: whether the controller believes it is bonded (mfr byte 0x0B = 0x81
      and bytes 0x0C..0x11 = console address) or is in discovery (all zero).
-  2. Diagnostic char 0x26 (8 bytes written by src/sw2/sw2.c):
-     u16 handle, u16 L2CAP length, u16 reply length, u8 status, u8 stage.
-Stage is the LAST event, not the furthest one reached.
+  2. Diagnostic char 0x26: the 15-byte record written by src/sw2/sw2.c (candidate 3+),
+     cleared only at boot. Counters and high-water marks survive the console session and
+     this PC connection (Windows' own Service Changed CCCD write only touches byte 7).
 """
 import argparse
 import asyncio
@@ -18,17 +18,23 @@ from bleak import BleakClient, BleakScanner
 
 DIAG = 'ab7de9be-89fe-49ad-828f-118f09df7fde'
 
-STAGES = {
-    0x00: 'nothing happened since boot (no write callback ran)',
-    0x01: 'write callback entered; frame rejected (bad length/header or not a command handle)',
-    0x02: 'command accepted and queued, reply not yet attempted (CCCD for the reply handle not enabled?)',
-    0x03: 'reply attempted; status 0x00 = sent, 0xB4 = notify hold-off (retrying), 0x81 = TX FIFO full (retrying)',
-    0x40: 'console asked for the LTK (RAND=0/EDIV=0) and we answered; status = fw_ltkReply result (0 = accepted)',
-    0x41: 'Nintendo bond saved to the stock bond journal after link encryption started',
-    0xe1: 'bond save FAILED (fw_saveBond returned 0)',
-    0xe2: 'second command arrived while one was still queued; it was DROPPED',
-    0xe3: 'reply generation failed: unknown/invalid command or bad 0x15 sequencing',
+EVENTS = {
+    0x00: 'no command ever accepted since boot',
+    0x01: 'last write to a command handle was a malformed frame (rejected)',
+    0x02: 'command queued, reply not yet attempted (reply CCCD not enabled, or disconnected first)',
+    0x03: 'reply attempted (see status byte: 0x00 sent, 0xB4 hold-off, 0x81 TX FIFO full)',
+    0x40: 'console requested the LTK and we answered with the derived key',
+    0x41: 'Nintendo bond saved to the stock bond journal',
+    0xe1: 'bond save FAILED',
+    0xe2: 'a command arrived while one was still queued and was DROPPED',
+    0xe3: 'reply generation failed: unknown command or bad 0x15 sequencing',
 }
+LTK = {0: 'never requested', 1: 'answered with derived key', 2: 'refused: EDIV/RAND nonzero (console used a stale/standard key)',
+       3: 'refused: pairing stage < 4 and no stored bond'}
+SAVE = {0: 'not attempted', 1: 'ok', 2: 'FAILED'}
+REASONS = {0x08: 'supervision timeout (link lost / 5 ms interval not sustained?)', 0x13: 'remote user terminated',
+           0x16: 'local host terminated', 0x3d: 'MIC failure (wrong LTK / key byte order)', 0x3e: 'connection failed to establish',
+           0x22: 'LMP response timeout', 0x28: 'instant passed'}
 
 
 def decode_adv(mfr):
@@ -73,17 +79,20 @@ async def main():
     async with BleakClient(dev, timeout=60, winrt={'use_cached_services': False}) as client:
         raw = await client.read_gatt_char(DIAG)
         print('diag bytes:', raw.hex(' '), flush=True)
-        if len(raw) < 8:
-            raise SystemExit('short diagnostic value')
-        handle = raw[0] | raw[1] << 8
-        length = raw[2] | raw[3] << 8
-        reply = raw[4] | raw[5] << 8
-        status, stage = raw[6], raw[7]
-        chan = {0x16: 'command+rumble (0x16 -> reply 0x1E)', 0x14: 'command (0x14 -> reply 0x1A)'}.get(handle, f'handle 0x{handle:04x}')
-        print(f'last write : {chan}, L2CAP length {length}')
-        print(f'last reply : {reply} bytes, notify/ltk status 0x{status:02x}')
-        print(f'last stage : 0x{stage:02x} = {STAGES.get(stage, "unknown stage code")}')
-        print('Note: this PC connection itself has reset the per-connection session; the console must re-pair/reconnect.')
+        if len(raw) < 15:
+            raise SystemExit('short diagnostic value: firmware older than candidate 3 (8-byte layout)')
+        r = raw
+        chan = {0x16: '0x16 command+rumble', 0x14: '0x14 command', 0: 'none'}.get(r[0], f'0x{r[0]:02x}')
+        print(f'commands accepted : {r[4]}   replies sent OK: {r[5]}   effective MTU at last cmd: {r[12]}')
+        print(f'last command      : {chan}  cmd 0x{r[1]:02x} sub 0x{r[2]:02x}  reply notify status 0x{r[3]:02x}')
+        print(f'last event        : 0x{r[6]:02x} = {EVENTS.get(r[6], "unknown")}')
+        print(f'last CCCD/desc wr : handle 0x{r[7]:02x}')
+        print(f'pairing high-water: stage {r[14]} of 4 (1=addr, 2=key, 3=proof, 4=finish)')
+        print(f'LTK request       : {LTK.get(r[8], r[8])}; fw_ltkReply returned 0x{r[9]:02x}')
+        print(f'link encryption   : {"started" if r[10] else "never started"}')
+        print(f'bond save         : {SAVE.get(r[11], r[11])}')
+        print(f'last disconnect   : 0x{r[13]:02x} {REASONS.get(r[13], "(none / other)")}')
+        print('Note: this PC connection reset the per-connection session; the record above is cumulative since boot.')
 
 
 if __name__ == '__main__':

@@ -25,7 +25,7 @@ def generate():
         up, vp = blob(uid), blob(value or b'\0')
         if len(entries)==0x26:
             vp='(const u8 *)SW2_DEBUG'
-            value=bytes(8)
+            value=bytes(15)   # SW2_DEBUG_LEN post-mortem record, see sw2.c
         cccds=(0xb,0xf,0x1b,0x1f,0x23,0x27,0x2f,0x3b)
         if len(entries) in cccds:
             vp='(const u8 *)(CCCD+%d)' % (2*cccds.index(len(entries)))

@@ -45,6 +45,35 @@ extern int fw_notify(unsigned short connection,unsigned short handle,const u8 *d
  * 0xaf0 (2.4G RX), 0xff6c (2.4G init), 0x102d4 (2.4G reply).
  * The BLE mode does not run those paths. First eight bytes are diagnostic only. */
 #define SW2_DEBUG ((volatile u8 *)0x846fb8)
+/* 15-byte post-mortem record exposed read-only on char 0x26. Cleared ONLY at
+ * boot (hook_set_gatt), never on connect/disconnect, so a PC connecting after
+ * a failed console attempt reads the console's history. Layout:
+ *  0 last command handle (0x14/0x16)   1 last cmd      2 last sub
+ *  3 last reply notify status          4 commands accepted (mod 256)
+ *  5 replies sent OK (mod 256)         6 last event: 1 bad frame, 2 queued,
+ *    3 reply attempted, 0x40 LTK answered, 0x41 bond saved, 0xe1 save failed,
+ *    0xe2 command dropped (one already queued), 0xe3 unknown/invalid command
+ *  7 last CCCD/descriptor handle written (low byte)
+ *  8 LTK request: 1 answered, 2 refused (EDIV/RAND nonzero), 3 refused (not paired)
+ *  9 fw_ltkReply return               10 link encryption flag seen (1)
+ * 11 bond save: 1 ok, 2 failed        12 effective ATT MTU (low byte) at last command
+ * 13 last disconnect reason           14 pairing stage high-water (0..4) */
+#define D_HANDLE 0
+#define D_CMD 1
+#define D_SUB 2
+#define D_STATUS 3
+#define D_NCMD 4
+#define D_NREPLY 5
+#define D_EVENT 6
+#define D_CCCD 7
+#define D_LTK 8
+#define D_LTKRET 9
+#define D_ENC 10
+#define D_SAVE 11
+#define D_MTU 12
+#define D_DISC 13
+#define D_STAGE 14
+#define SW2_DEBUG_LEN 15
 /* These are proprietary 2.4G-only buffers, unused in the BLE physical mode.
  * All literal references audited: RX64 @10050; assembly68 @0xba4.
  * Do not extend either allocation into adjacent stock state. */
@@ -57,7 +86,7 @@ typedef struct {
 typedef char state_size_check[sizeof(Sw2Runtime)<=68?1:-1];
 #define STATE ((Sw2Runtime *)0x84710c)
 #define QUEUE ((u8 *)0x84618c)
-#define CCCD ((u8 *)0x846fc0)
+#define CCCD ((u8 *)0x846fc7)   /* 16 CCCD bytes right after the 15-byte record: 0x846fb8+31 = end of the audited scratch */
 #define TICKS (*(volatile u32 *)0x800740)
 extern int fw_ltkReply(unsigned short,const u8 *);
 extern int fw_ltkNegative(unsigned short);
@@ -90,16 +119,17 @@ static int ltk_request(unsigned short conn,const u8 *rand,unsigned short ediv)
 {
     int i;
     if(ediv || (STATE->session.stage!=4 && !STATE->session.bonded)) {
-        fw_ltkNegative(conn); return 1;
+        fw_ltkNegative(conn); SW2_DEBUG[D_LTK]=ediv?2:3; return 1;
     }
-    for(i=0;i<8;++i) if(rand[i]) { fw_ltkNegative(conn); return 1; }
-    SW2_DEBUG[7]=0x40;
-    SW2_DEBUG[6]=(u8)fw_ltkReply(conn,STATE->session.ltk);
+    for(i=0;i<8;++i) if(rand[i]) { fw_ltkNegative(conn); SW2_DEBUG[D_LTK]=2; return 1; }
+    SW2_DEBUG[D_EVENT]=0x40; SW2_DEBUG[D_LTK]=1;
+    SW2_DEBUG[D_LTKRET]=(u8)fw_ltkReply(conn,STATE->session.ltk);
     return 1;
 }
 static void disconnected(u8 event,u8 *p,int n)
 {
     if(!sw2_active()) { fw_stockDisconnect(event,p,n); return; }
+    if(p && n>0) SW2_DEBUG[D_DISC]=p[0];
     *(volatile u32 *)0x84445c=0;
     STATE->queued=0; STATE->session.stage=0; zero(CCCD,16);
     advertise(); fw_enableAdv(1);
@@ -128,7 +158,8 @@ static void save_bond(void)
     /* Use the stock bond journal, never an invented flash region. */
     fw_compactBonds();
     STATE->stored=fw_saveBond(record)?1:2; /* Failed saves never spin/write repeatedly. */
-    SW2_DEBUG[7]=STATE->stored==1?0x41:0xe1;
+    SW2_DEBUG[D_SAVE]=STATE->stored;
+    SW2_DEBUG[D_EVENT]=STATE->stored==1?0x41:0xe1;
 }
 static int sw2_discovery_write(void *packet)
 {
@@ -138,20 +169,19 @@ static int sw2_discovery_write(void *packet)
     const u8 *h;
     u32 skip,n;
     int idx;
-    SW2_DEBUG[0]=(u8)handle; SW2_DEBUG[1]=(u8)(handle>>8);
-    SW2_DEBUG[2]=(u8)length; SW2_DEBUG[3]=(u8)(length>>8);
-    SW2_DEBUG[4]=0; SW2_DEBUG[5]=0; SW2_DEBUG[6]=0xff; SW2_DEBUG[7]=1;
     if(length<3 || length>247) return 0;
     idx=cccd_index(handle);
-    if(idx>=0) { if(length==5) copy(CCCD+2*idx,p+9,2); return 0; }
-    if(handle!=0x14 && handle!=0x16) return 0;
+    if(idx>=0) { if(length==5) copy(CCCD+2*idx,p+9,2); SW2_DEBUG[D_CCCD]=(u8)handle; return 0; }
+    if(handle!=0x14 && handle!=0x16) { SW2_DEBUG[D_CCCD]=(u8)handle; return 0; }
     skip=handle==0x16?33:0;
-    if(length<3+skip+8) return 0;
+    if(length<3+skip+8) { SW2_DEBUG[D_EVENT]=1; return 0; }
     h=p+9+skip; n=8+h[5];
-    if(h[1]!=0x91 || h[2]!=1 || h[6] || h[7] || n>length-3-skip || n>64) return 0;
-    if(STATE->queued) { SW2_DEBUG[7]=0xe2; return 0; }
+    if(h[1]!=0x91 || h[2]!=1 || h[6] || h[7] || n>length-3-skip || n>64) { SW2_DEBUG[D_EVENT]=1; return 0; }
+    if(STATE->queued) { SW2_DEBUG[D_EVENT]=0xe2; return 0; }
     copy(QUEUE,h,n); STATE->channel=(u8)handle; STATE->queued=(u8)n;
-    SW2_DEBUG[7]=2;
+    SW2_DEBUG[D_HANDLE]=(u8)handle; SW2_DEBUG[D_CMD]=h[0]; SW2_DEBUG[D_SUB]=h[3];
+    SW2_DEBUG[D_NCMD]++; SW2_DEBUG[D_MTU]=*(volatile u8 *)0x844d8e;
+    SW2_DEBUG[D_EVENT]=2;
     return 0;
 }
 #include "gatt.inc"
@@ -215,17 +245,20 @@ void hook_reports(void)
         zero(response,prefix);
         n=sw2_session_reply(&STATE->session,STATE->own,QUEUE,STATE->queued,
                              response+prefix,sizeof(response)-prefix);
-        if(!n) { STATE->queued=0; SW2_DEBUG[7]=0xe3; return; }
-        n+=prefix; SW2_DEBUG[4]=(u8)n; SW2_DEBUG[5]=(u8)(n>>8);
+        if(!n) { STATE->queued=0; SW2_DEBUG[D_EVENT]=0xe3; return; }
+        n+=prefix;
         status=fw_notify(0x40,STATE->channel==0x16?0x1e:0x1a,response,n);
-        SW2_DEBUG[6]=(u8)status; SW2_DEBUG[7]=3;
+        SW2_DEBUG[D_STATUS]=(u8)status; SW2_DEBUG[D_EVENT]=3;
+        if(STATE->session.stage>SW2_DEBUG[D_STAGE]) SW2_DEBUG[D_STAGE]=STATE->session.stage;
         if(status==0) {
+            SW2_DEBUG[D_NREPLY]++;
             if(QUEUE[0]==0x15 && QUEUE[3]==1) STATE->stored=0;
             if(QUEUE[0]==0x15 && QUEUE[3]==3) STATE->session.bonded=1;
             STATE->queued=0;
         }
         return; /* Retain the request through busy/FIFO-full errors. */
     }
+    if(*(volatile u8 *)0x844c3e) SW2_DEBUG[D_ENC]=1;
     if(STATE->session.bonded && !STATE->stored && *(volatile u8 *)0x844c3e) save_bond();
     /* Input is gated on the CCCD and enabled features only, NOT on link
      * encryption: the console always encrypts, and a PC (which cannot use the

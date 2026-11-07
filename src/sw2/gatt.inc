@@ -156,7 +156,7 @@ static const Sw2Attribute sw2_attributes[] = {
     {0,3,2,2,gatt_data_68,(const u8 *)(CCCD+8),sw2_discovery_write,0},
     {0,3,16,2,gatt_data_70,gatt_data_71,sw2_discovery_write,0},
     {0,1,2,19,gatt_data_72,gatt_data_73,0,0},
-    {0,1,16,8,gatt_data_74,(const u8 *)SW2_DEBUG,0,0},
+    {0,1,16,15,gatt_data_74,(const u8 *)SW2_DEBUG,0,0},
     {0,3,2,2,gatt_data_76,(const u8 *)(CCCD+10),sw2_discovery_write,0},
     {0,3,16,2,gatt_data_78,gatt_data_79,sw2_discovery_write,0},
     {0,1,2,19,gatt_data_80,gatt_data_81,0,0},

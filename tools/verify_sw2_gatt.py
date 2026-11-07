@@ -35,10 +35,10 @@ for handle in range(60):
     assert perm == expected_permission, (handle,'permissions',perm,expected_permission)
     uid = read(up, ul)
     if handle==0x26:
-        assert vp==0x846fb8 and length==8
+        assert vp==0x846fb8 and length==15
         value=bytes(8)
     elif handle in (0xb,0xf,0x1b,0x1f,0x23,0x27,0x2f,0x3b):
-        assert vp==0x846fc0+2*(0xb,0xf,0x1b,0x1f,0x23,0x27,0x2f,0x3b).index(handle) and length==2
+        assert vp==0x846fc7+2*(0xb,0xf,0x1b,0x1f,0x23,0x27,0x2f,0x3b).index(handle) and length==2
         value=bytes(2)
     else:
         value = read(vp, length)
