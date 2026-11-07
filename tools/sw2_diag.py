@@ -81,6 +81,7 @@ async def main():
         print('diag bytes:', raw.hex(' '), flush=True)
         if len(raw) < 15:
             raise SystemExit('short diagnostic value: firmware older than candidate 3 (8-byte layout)')
+        print('diag bytes 15..30 (trace):', raw[15:].hex(' ') if len(raw) > 15 else '(none: firmware older than candidate 5)')
         r = raw
         chan = {0x16: '0x16 command+rumble', 0x14: '0x14 command', 0: 'none'}.get(r[0], f'0x{r[0]:02x}')
         print(f'commands accepted : {r[4]}   replies sent OK: {r[5]}   effective MTU at last cmd: {r[12]}')
@@ -92,6 +93,17 @@ async def main():
         print(f'link encryption   : {"started" if r[10] else "never started"}')
         print(f'bond save         : {SAVE.get(r[11], r[11])}')
         print(f'last disconnect   : 0x{r[13]:02x} {REASONS.get(r[13], "(none / other)")}')
+        if len(r) >= 31:
+            secs = 'still connected' if r[29] == 255 else f'{r[29]} s'
+            print(f'--- first connection since boot (connections so far: {r[15]}; this PC read is one of them) ---')
+            print(f'duration          : {secs}')
+            print(f'ATT MTU requests  : {r[16]}')
+            print(f'ATT discovery PDUs: {r[17]}   reads: {r[18]}')
+            print(f'ATT write requests: {r[19]}   write commands: {r[20]}   first written handle: 0x{r[24]:02x}')
+            print(f'other ATT PDUs    : {r[21]}   last ATT opcode 0x{r[22]:02x} on handle 0x{r[23]:02x}')
+            print(f'SMP PDUs          : {r[25]}   first SMP code 0x{r[26]:02x}' + ('  (0x01 = Pairing Request from the peer)' if r[25] and r[26] == 1 else ''))
+            print(f'L2CAP signalling  : {r[27]}   first code 0x{r[28]:02x}')
+            print(f'other channels    : {r[30]}')
         print('Note: this PC connection reset the per-connection session; the record above is cumulative since boot.')
 
 

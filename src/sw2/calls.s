@@ -25,3 +25,6 @@
     .section .patch_d496, "ax"
     .code 16
     tjl hook_request_parameters
+    .section .patch_18f5e, "ax"
+    .code 16
+    tjl hook_l2cap

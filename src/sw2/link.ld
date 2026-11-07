@@ -17,6 +17,9 @@ fw_stockPairButton = 0xd708;
 fw_loadBond = 0x1a3b4;
 fw_saveBond = 0x1a560;
 fw_compactBonds = 0x1a130;
+fw_l2capReassemble = 0x18bb8;
+fw_ledState = 0xf60c;
+fw_charging = 0x10e6c;
 SECTIONS {
   .text 0xa100 : { *(.text .text.*) *(.rodata .rodata.*) }
   .patch_d5b2 0xd5b2 : { *(.patch_d5b2) }
@@ -28,6 +31,7 @@ SECTIONS {
   .patch_d750 0xd750 : { *(.patch_d750) }
   .patch_d48a 0xd48a : { *(.patch_d48a) }
   .patch_d496 0xd496 : { *(.patch_d496) }
+  .patch_18f5e 0x18f5e : { *(.patch_18f5e) }
   .data 0x0 : { *(.data .data.*) *(.bss .bss.*) *(COMMON) }
   /DISCARD/ : { *(.comment) }
 }

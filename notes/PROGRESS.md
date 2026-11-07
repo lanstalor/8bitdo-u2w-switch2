@@ -412,3 +412,28 @@ console Change Grip/Order with L+R -> on failure, do NOT power off, run
   = candidate 3 + Y mode sets that flag while unconnected for 4 min after boot or
   disconnect (`idle_from` in Sw2Runtime), so a failed console attempt leaves time
   to run `tools/sw2_diag.py`. Host tests cover the window. NOT yet flashed.
+
+### Console attempt with candidate 4, and candidate 5 (Claude, 2026-11-07 ~13:20)
+
+- Candidate 4 flashed. Console test: LED solid, no response to L+R, no icon.
+  First diag scan found no advertisement (the controller was connected); after
+  the user powered the Switch 2 off, the record read: commands accepted 0,
+  replies 0, LTK never requested, encryption never started, last disconnect
+  0x13 (remote terminated, consistent with console power-off). Windows has no
+  pairing for the Y-mode address and no BLE client process was running, so the
+  connected peer was the console. **The console connected, held the link and
+  never wrote a command to 0x14/0x16.** Byte 7 (last CCCD) was overwritten by
+  the PC's own Service Changed write, so what the console did instead is unknown.
+- LED: our disconnect handler skipped stock `0xf60c(4,2)`, so the LED stayed
+  solid after any disconnect. The LED is not evidence of a live link on
+  candidates 1-4.
+- Candidate 5 (`firmware/mod-sw2-candidate-5-v109.bin`, SHA256 b6465a351f6cc556...):
+  hook at 0x18f5e (stock `tjl 0x18bb8`, the L2CAP reassembly call inside the
+  dispatcher 0x18f50; r0 = packet in/out) counts every L2CAP PDU of the FIRST
+  connection since boot, frozen afterwards: ATT MTU / discovery / reads / write
+  req / write cmd / other, last opcode + handle, first written handle, SMP count
+  + first code (CID 6), signalling count + first code (CID 5), other CIDs, and
+  first-connection duration. Record is now 31 bytes on char 0x26; CCCDs moved
+  into the runtime block at 0x84710c+46 (only CCCD bytes exposed). Disconnect
+  restores the stock LED pattern. Five sectors change (0x13000 for the hook).
+  Host tests cover the trace, freeze and LED. Not yet flashed.

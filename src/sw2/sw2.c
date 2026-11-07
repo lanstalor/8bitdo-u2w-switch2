@@ -73,7 +73,35 @@ extern int fw_notify(unsigned short connection,unsigned short handle,const u8 *d
 #define D_MTU 12
 #define D_DISC 13
 #define D_STAGE 14
-#define SW2_DEBUG_LEN 15
+/* Bytes 15..30: L2CAP trace of the FIRST connection since boot only (frozen
+ * once a second connection starts, so a later PC diagnostic connection cannot
+ * overwrite what the console did). Counts saturate at 255.
+ * 15 connections since boot (keeps counting)   16 ATT MTU requests
+ * 17 ATT discovery PDUs (0x04/0x06/0x08/0x10)   18 ATT reads (0x0a/0x0c/0x0e)
+ * 19 ATT write requests (0x12)                  20 ATT write commands (0x52)
+ * 21 other ATT PDUs (incl. client responses)    22 last ATT opcode
+ * 23 last ATT handle (low byte)                 24 first written handle (low byte)
+ * 25 SMP PDUs (CID 6)                           26 first SMP code
+ * 27 L2CAP signalling PDUs (CID 5)              28 first signalling code
+ * 29 first connection duration, seconds (255 = still connected / >=255 s)
+ * 30 PDUs on any other CID */
+#define T_CONN 15
+#define T_MTU 16
+#define T_DISC 17
+#define T_READ 18
+#define T_WREQ 19
+#define T_WCMD 20
+#define T_OTHER 21
+#define T_LASTOP 22
+#define T_LASTH 23
+#define T_FIRSTW 24
+#define T_SMP 25
+#define T_SMP1 26
+#define T_SIG 27
+#define T_SIG1 28
+#define T_SECS 29
+#define T_CID 30
+#define SW2_DEBUG_LEN 31
 /* These are proprietary 2.4G-only buffers, unused in the BLE physical mode.
  * All literal references audited: RX64 @10050; assembly68 @0xba4.
  * Do not extend either allocation into adjacent stock state. */
@@ -83,6 +111,8 @@ typedef struct {
     u32 idle_from;      /* TICKS at boot / last disconnect: keep-awake window start */
     u8 queued, channel, stored, configured;
     u8 own[6];
+    u8 cccd[16];        /* RAM-backed CCCD values for handles b,f,1b,1f,23,27,2f,3b */
+    u32 connected_at;   /* TICKS at the start of the current connection */
 } Sw2Runtime;
 /* Stock key scanner (0xf298) powers the pad off after a fixed count of idle
  * scans while unconnected (threshold u16 @0x845a1c, ~1-2 min) and key presses
@@ -95,7 +125,11 @@ typedef struct {
 typedef char state_size_check[sizeof(Sw2Runtime)<=68?1:-1];
 #define STATE ((Sw2Runtime *)0x84710c)
 #define QUEUE ((u8 *)0x84618c)
-#define CCCD ((u8 *)0x846fc7)   /* 16 CCCD bytes right after the 15-byte record: 0x846fb8+31 = end of the audited scratch */
+/* CCCDs live inside the 68-byte runtime block (fixed offset 46, checked below)
+ * so the whole 31-byte scratch at 0x846fb8 is the readable post-mortem record.
+ * Only the CCCD bytes are exposed by GATT, never the session/LTK. */
+#define CCCD ((u8 *)(0x84710c + 46))
+typedef char cccd_offset_check[__builtin_offsetof(Sw2Runtime,cccd)==46?1:-1];
 #define TICKS (*(volatile u32 *)0x800740)
 extern int fw_ltkReply(unsigned short,const u8 *);
 extern int fw_ltkNegative(unsigned short);
@@ -135,10 +169,23 @@ static int ltk_request(unsigned short conn,const u8 *rand,unsigned short ediv)
     SW2_DEBUG[D_LTKRET]=(u8)fw_ltkReply(conn,STATE->session.ltk);
     return 1;
 }
+extern void fw_ledState(u8 which,u8 state);   /* 0xf60c: (4,1) connected solid, (4,2) searching blink */
+extern u8 fw_charging(void);                  /* 0x10e6c: stock disconnect skips the LED change when set */
+static void bump(int i) { if(SW2_DEBUG[i]!=255) SW2_DEBUG[i]++; }
 static void disconnected(u8 event,u8 *p,int n)
 {
+    u32 d,s;
     if(!sw2_active()) { fw_stockDisconnect(event,p,n); return; }
     if(p && n>0) SW2_DEBUG[D_DISC]=p[0];
+    if(SW2_DEBUG[T_CONN]==1) {
+        /* No libgcc division helper is linked: count whole seconds (16 MHz ticks). */
+        d=TICKS-STATE->connected_at; s=0;
+        while(d>=16000000u && s<254) { d-=16000000u; ++s; }
+        SW2_DEBUG[T_SECS]=(u8)s;
+    }
+    /* Stock disconnect (0xd4e0) returns the LED to the searching pattern;
+     * without this the LED stayed solid after the console dropped the link. */
+    if(!fw_charging()) fw_ledState(4,2);
     *(volatile u32 *)0x84445c=0;
     STATE->queued=0; STATE->session.stage=0; zero(CCCD,16);
     STATE->idle_from=TICKS;
@@ -312,7 +359,39 @@ int hook_request_mtu(unsigned short connection, unsigned short mtu)
      * are never delayed ~300 ms after the console's service discovery. */
     *(volatile u8 *)0x844d94 = 0;
     STATE->queued=0; zero(CCCD,16); STATE->session.stage=0;
+    bump(T_CONN); STATE->connected_at=TICKS;
+    if(SW2_DEBUG[T_CONN]==1) SW2_DEBUG[T_SECS]=255;   /* overwritten at disconnect */
     return 0;
+}
+
+/* Every reassembled L2CAP PDU passes through 0x18bb8 on its way to the
+ * dispatcher 0x18f50 (call site 0x18f5e; r0 = packet, returns packet or 0).
+ * Packet: [2..3] L2CAP length, [4..5] CID, [6] opcode/code, [7..8] ATT handle. */
+extern const u8 *fw_l2capReassemble(const u8 *p);
+const u8 *hook_l2cap(const u8 *p)
+{
+    const u8 *r=fw_l2capReassemble(p);
+    u32 cid; u8 op;
+    if(!r || !sw2_active() || SW2_DEBUG[T_CONN]!=1) return r;
+    cid=(u32)r[4]|((u32)r[5]<<8); op=r[6];
+    if(cid==4) {
+        if(op==0x02) bump(T_MTU);
+        else if(op==0x04 || op==0x06 || op==0x08 || op==0x10) bump(T_DISC);
+        else if(op==0x0a || op==0x0c || op==0x0e) bump(T_READ);
+        else if(op==0x12 || op==0x52) {
+            bump(op==0x12?T_WREQ:T_WCMD);
+            if(!SW2_DEBUG[T_FIRSTW]) SW2_DEBUG[T_FIRSTW]=r[7];
+        } else bump(T_OTHER);
+        SW2_DEBUG[T_LASTOP]=op;
+        if(op==0x0a || op==0x0c || op==0x12 || op==0x52) SW2_DEBUG[T_LASTH]=r[7];
+    } else if(cid==6) {
+        if(!SW2_DEBUG[T_SMP]) SW2_DEBUG[T_SMP1]=op;
+        bump(T_SMP);
+    } else if(cid==5) {
+        if(!SW2_DEBUG[T_SIG]) SW2_DEBUG[T_SIG1]=op;
+        bump(T_SIG);
+    } else bump(T_CID);
+    return r;
 }
 
 extern void fw_requestParameters(unsigned short, unsigned short, unsigned short, unsigned short);
