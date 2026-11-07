@@ -18,6 +18,8 @@ Start with [CURRENT_HANDOFF.md](notes/CURRENT_HANDOFF.md) for the verified state
 and implementation constraints, and [RECOVERY.md](notes/RECOVERY.md) for returning
 to stock. `notes/PROGRESS.md` retains the full investigation history.
 
+See the [feature roadmap](ROADMAP.md) for proposed work and validation criteria.
+
 - `notes/`     docs: PROGRESS, PHASE0 (static analysis), PHASE1_WINDOWS (flashing + test log), SWITCH2_PROTOCOL (protocol spec)
 - `tools/`     flashers (`u2wflash.py`, `u2wboot.py`), mod builders (`mkmod.py`, `fixcrc.py`), BLE and Ghidra helpers, capture scripts
 - `src/`       C sources for the on-controller code (`src/sw2` is the Switch 2 mode; build with `src/sw2/build.sh` via WSL)
