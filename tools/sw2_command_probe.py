@@ -16,6 +16,7 @@ async def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--scan-secs', type=float, default=60)
     parser.add_argument('--input-secs', type=float, default=15, help='how long to stream input reports')
+    parser.add_argument('--mtu512', action='store_true', help='require MTU512 and exercise maximum-size ATT write')
     args = parser.parse_args()
     dev = await BleakScanner.find_device_by_filter(
         lambda d,a: (a.local_name or d.name or '') == 'Pro Controller' and 0x0553 in a.manufacturer_data,
@@ -26,6 +27,8 @@ async def main():
     async with BleakClient(dev, timeout=90, winrt={'use_cached_services':False}) as client:
         print(f'MTU {client.mtu_size}',flush=True)
         assert client.mtu_size >= 153, 'MTU cannot carry the largest test response'
+        if args.mtu512:
+            assert client.mtu_size == 512, 'expected negotiated MTU512'
         queue = asyncio.Queue()
         await client.start_notify(RESPONSE,lambda _,data: queue.put_nowait(bytes(data)))
         # Send immediately: the final firmware must retry the stock post-MTU
@@ -45,6 +48,11 @@ async def main():
             return reply[22:]
 
         assert await exchange(7,1) == b'\0'
+        if args.mtu512:
+            assert await exchange(7,1,padding=468) == b'\0'
+            debug=await client.read_gatt_char('ab7de9be-89fe-49ad-828f-118f09df7fde')
+            assert len(debug)==31 and debug[30]==0xcc and debug[26]==0, 'transport buffer canary changed: '+debug.hex(' ')
+            print('PASS: maximum 509-byte value / 512-byte ATT write; buffer guards intact',flush=True)
         assert await exchange(0x10,1) == bytes.fromhex('020104020c00000000020300')
         body=await exchange(2,4,bytes.fromhex('407e000000300100'),padding=80)
         assert len(body)==72 and body[:8] == bytes.fromhex('4000000000300100')

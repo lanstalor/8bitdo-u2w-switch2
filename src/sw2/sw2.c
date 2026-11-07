@@ -5,6 +5,7 @@ typedef unsigned char u8;
 typedef unsigned int u32;
 #include "protocol.h"
 #include "session.h"
+#include "phy_blob.inc"
 
 extern int fw_setAdvData(u8 *p, u8 len);      /* 0x15894 */
 extern int fw_setScanRspData(u8 *p, u8 len);  /* 0x15918 */
@@ -73,35 +74,35 @@ extern int fw_notify(unsigned short connection,unsigned short handle,const u8 *d
 #define D_MTU 12
 #define D_DISC 13
 #define D_STAGE 14
-/* Bytes 15..30: L2CAP trace of the FIRST connection since boot only (frozen
- * once a second connection starts, so a later PC diagnostic connection cannot
- * overwrite what the console did). Counts saturate at 255.
- * 15 connections since boot (keeps counting)   16 ATT MTU requests
- * 17 ATT discovery PDUs (0x04/0x06/0x08/0x10)   18 ATT reads (0x0a/0x0c/0x0e)
- * 19 ATT write requests (0x12)                  20 ATT write commands (0x52)
- * 21 other ATT PDUs (incl. client responses)    22 last ATT opcode
- * 23 last ATT handle (low byte)                 24 first written handle (low byte)
- * 25 SMP PDUs (CID 6)                           26 first SMP code
- * 27 L2CAP signalling PDUs (CID 5)              28 first signalling code
- * 29 first connection duration, seconds (255 = still connected / >=255 s)
- * 30 PDUs on any other CID */
+/* Candidate 12 first-connection trace, same bounded 31-byte allocation.
+ * 15 connections,16 duration,17 L2CAP total,18 first CID low,19 first opcode,
+ * 20 first length low,21/22 first two parameters,23 negotiated MTU low,24 maxPHY,
+ * 25 negotiated MTU high,
+ * 26 guard failures (1RX,2TX),27 successful feature enqueues,28 last L2CAP opcode,
+ * 29 seen LL classes (feature,length,version,PHY,encryption,other,term,map),
+ * 30 layout marker 0xcc. */
 #define T_CONN 15
-#define T_MTU 16
-#define T_DISC 17
-#define T_READ 18
-#define T_WREQ 19
-#define T_WCMD 20
-#define T_OTHER 21
-#define T_LASTOP 22
-#define T_LASTH 23
-#define T_FIRSTW 24
-#define T_SMP 25
-#define T_SMP1 26
-#define T_SIG 27
-#define T_SIG1 28
-#define T_SECS 29
-#define T_CID 30
+#define T_SECS 16
+#define T_L2CAP 17
+#define T_FIRST_CID 18
+#define T_FIRST_OP 19
+#define T_FIRST_LEN 20
+#define T_FIRST_ARG0 21
+#define T_FIRST_ARG1 22
+#define T_MTU_LO 23
+#define T_PHY_MAX 24
+#define T_MTU_HI 25
+#define T_GUARD_FLAGS 26
+#define T_TX_OK 27
+#define T_LAST_OP 28
+#define T_LL_SEEN 29
+#define T_LAYOUT 30
 #define SW2_DEBUG_LEN 31
+#define SW2_ATT_MTU 512u
+#define SW2_TRANSPORT_SIZE 520u
+#define SW2_RX_BUFFER ((u8 *)0x840d8c)
+#define SW2_TX_BUFFER ((u8 *)0x840f9c)
+#define SW2_GUARD 0x51a7c0deu
 /* These are proprietary 2.4G-only buffers, unused in the BLE physical mode.
  * All literal references audited: RX64 @10050; assembly68 @0xba4.
  * Do not extend either allocation into adjacent stock state. */
@@ -171,6 +172,15 @@ static int ltk_request(unsigned short conn,const u8 *rand,unsigned short ediv)
 }
 extern void fw_ledState(u8 which,u8 state);   /* 0xf60c: (4,1) connected solid, (4,2) searching blink */
 extern u8 fw_charging(void);                  /* 0x10e6c: stock disconnect skips the LED change when set */
+/* configured bit 0 = event callback registered; bit 1 = usable Nintendo input.
+ * A raw BLE connection (including a diagnostic PC) is not Nintendo readiness. */
+static void input_led(int ready)
+{
+    if(ready) STATE->configured|=2;
+    else STATE->configured&=(u8)~2;
+    /* Reassert against other stock LED writers; f60c is a no-op if unchanged. */
+    if(!fw_charging()) fw_ledState(4,ready?1:2);
+}
 static void bump(int i) { if(SW2_DEBUG[i]!=255) SW2_DEBUG[i]++; }
 static void disconnected(u8 event,u8 *p,int n)
 {
@@ -186,8 +196,10 @@ static void disconnected(u8 event,u8 *p,int n)
     /* Stock disconnect (0xd4e0) returns the LED to the searching pattern;
      * without this the LED stayed solid after the console dropped the link. */
     if(!fw_charging()) fw_ledState(4,2);
+    STATE->configured&=(u8)~2;
     *(volatile u32 *)0x84445c=0;
-    STATE->queued=0; STATE->session.stage=0; zero(CCCD,16);
+    STATE->queued=0; STATE->session.stage=0;
+    STATE->session.features=0; STATE->session.counter=0; zero(CCCD,16);
     STATE->idle_from=TICKS;
     advertise(); fw_enableAdv(1);
 }
@@ -226,7 +238,7 @@ static int sw2_discovery_write(void *packet)
     const u8 *h;
     u32 skip,n;
     int idx;
-    if(length<3 || length>247) return 0;
+    if(length<3 || length>SW2_ATT_MTU) return 0;
     idx=cccd_index(handle);
     if(idx>=0) { if(length==5) copy(CCCD+2*idx,p+9,2); SW2_DEBUG[D_CCCD]=(u8)handle; return 0; }
     if(handle!=0x14 && handle!=0x16) { SW2_DEBUG[D_CCCD]=(u8)handle; return 0; }
@@ -243,11 +255,52 @@ static int sw2_discovery_write(void *packet)
 }
 #include "gatt.inc"
 extern void fw_setAttributeTable(const void *table);
+extern void fw_resetConnPhy(void *state);
+static void install_transport(void)
+{
+    u8 irq=*(volatile u8 *)0x800643;
+    *(volatile u8 *)0x800643=0;
+    /* 2.4G-only code overlays; same d9ba mode-transition guard as PHY.
+     * 520-byte usable buffers plus two canary words each, ending8411ac. */
+    zero(SW2_RX_BUFFER,SW2_TRANSPORT_SIZE);
+    zero(SW2_TX_BUFFER,SW2_TRANSPORT_SIZE);
+    *(volatile u32 *)(SW2_RX_BUFFER+520)=SW2_GUARD;
+    *(volatile u32 *)(SW2_RX_BUFFER+524)=SW2_GUARD;
+    *(volatile u32 *)(SW2_TX_BUFFER+520)=SW2_GUARD;
+    *(volatile u32 *)(SW2_TX_BUFFER+524)=SW2_GUARD;
+    *(volatile u32 *)0x844dd4=(u32)(unsigned long)SW2_RX_BUFFER;
+    *(volatile u32 *)0x844dd8=(u32)(unsigned long)SW2_TX_BUFFER;
+    *(volatile unsigned short *)0x844ddc=SW2_TRANSPORT_SIZE;
+    *(volatile unsigned short *)0x844dde=SW2_TRANSPORT_SIZE;
+    *(volatile unsigned short *)0x844d8c=SW2_ATT_MTU;
+    *(volatile u8 *)0x800643=irq;
+}
+static void install_phy(void)
+{
+    unsigned int i;
+    volatile u8 *destination=(volatile u8 *)0x840c04;
+    u8 irq=*(volatile u8 *)0x800643;
+    *(volatile u8 *)0x800643=0;
+    /* Overlay only the 2.4G parser's RAM body, preserving its literal pool.
+     * The flash original reloads on reset; d9ba is guarded during mode debounce. */
+    for(i=0;i<sizeof(sw2_phy_blob);++i) destination[i]=sw2_phy_blob[i];
+    fw_resetConnPhy((void *)0x844b7c);
+    *(volatile u8 *)0x844d34=1;
+    *(volatile u32 *)0x844d3c=SW2_RADIO_PHY_ADDR;
+    *(volatile u32 *)0x844b88=SW2_PHY_INSTANT_ADDR;
+    *(volatile u32 *)0x844b8c=SW2_PHY_START_ADDR;
+    /* Publish LE2M only after all executable code and callbacks are ready. */
+    *(volatile u32 *)0x844a04|=0x100;
+    *(volatile u8 *)0x800643=irq;
+}
 void hook_set_gatt(const void *stock)
 {
     int i;
     if(sw2_mode()) {
         for(i=0;i<31;++i) SW2_DEBUG[i]=0;
+        SW2_DEBUG[T_LAYOUT]=0xcc;
+        install_phy();
+        install_transport();
         zero((u8 *)STATE,sizeof(*STATE));
         /* Read actual initialized public identity, not factory assumptions. */
         copy(STATE->own,(const u8 *)0x8449e4,6);
@@ -265,7 +318,9 @@ void hook_prepare_address(u8 *address, int length)
     int i;
     if (sw2_mode() && length == 6) {
         for (i = 0; i < 6; ++i) address[i] = factory[i];
-        address[0] ^= 0x80;
+        /* Candidate8: fresh test identity; candidate7 used xor0x80.
+         * Factory address and bond journal remain untouched. */
+        address[0] ^= 0x40;
     }
 }
 
@@ -277,6 +332,21 @@ int hook_bond_count(void)
 }
 
 extern void fw_stockReports(void);
+extern u8 fw_getTxFifoNumber(void);
+static void trace_phy_progress(void)
+{
+    u8 phy;
+    if(SW2_DEBUG[T_CONN]!=1 ||
+       !*(volatile u32 *)0x84445c) return;
+    phy=*(volatile u8 *)0x844b7d;
+    if(phy>SW2_DEBUG[T_PHY_MAX]) SW2_DEBUG[T_PHY_MAX]=phy;
+    SW2_DEBUG[T_MTU_LO]=*(volatile u8 *)0x844d8e;
+    SW2_DEBUG[T_MTU_HI]=*(volatile u8 *)0x844d8f;
+    if(*(volatile u32 *)(SW2_RX_BUFFER+520)!=SW2_GUARD ||
+       *(volatile u32 *)(SW2_RX_BUFFER+524)!=SW2_GUARD) SW2_DEBUG[T_GUARD_FLAGS]|=1;
+    if(*(volatile u32 *)(SW2_TX_BUFFER+520)!=SW2_GUARD ||
+       *(volatile u32 *)(SW2_TX_BUFFER+524)!=SW2_GUARD) SW2_DEBUG[T_GUARD_FLAGS]|=2;
+}
 static int sw2_active(void)
 {
     /* Runtime mode is the registered table, not the current button state. */
@@ -287,18 +357,29 @@ static int sw2_active(void)
     return *(const void * volatile *)0x844d6c == sw2_attributes;
 #endif
 }
+extern void fw_stockRadioLoop(void);
+void hook_stock_radio_loop(void)
+{
+    /* Physical switch is live before stock debounce resets. Do not execute
+     * the overwritten 2.4G parser during that brief transition. */
+    if(*(volatile u32 *)0x844d3c!=SW2_RADIO_PHY_ADDR) fw_stockRadioLoop();
+}
 void hook_reports(void)
 {
     u8 response[160]; int n,prefix,status;
     const volatile u32 *controls=(const volatile u32 *)0x846d44;
     if (!sw2_active()) { fw_stockReports(); return; }
-    if(!STATE->configured) {
-        fw_registerEvent(4,disconnected); STATE->configured=1;
+    trace_phy_progress();
+    if(!(STATE->configured&1)) {
+        fw_registerEvent(4,disconnected); STATE->configured|=1;
     }
     if(!*(volatile u32 *)0x84445c) {
+        input_led(0);
         if((u32)(TICKS-STATE->idle_from)<KEEP_AWAKE_TICKS) KEEP_AWAKE=1;
         return;
     }
+    input_led((STATE->configured&2)!=0 && STATE->session.bonded &&
+              *(volatile u8 *)0x844c3e && (CCCD[2]&1) && (STATE->session.features&3));
     if(STATE->queued) {
         prefix=STATE->channel==0x16?14:0;
         if(!(CCCD[STATE->channel==0x16?6:4]&1)) return;
@@ -328,7 +409,10 @@ void hook_reports(void)
     if((u32)(TICKS-STATE->last_report)<240000) return;
     sw2_input(response,STATE->session.counter,STATE->session.features,
               controls[0],controls[1],controls[2],controls[3]);
-    if(!fw_notify(0x40,0xe,response,63)) { STATE->session.counter++; STATE->last_report=TICKS; }
+    if(!fw_notify(0x40,0xe,response,63)) {
+        STATE->session.counter++; STATE->last_report=TICKS;
+        input_led(STATE->session.bonded && *(volatile u8 *)0x844c3e);
+    }
 }
 
 void hook_pair_button(void)
@@ -337,6 +421,7 @@ void hook_pair_button(void)
     if(!*(volatile u8 *)0x846020) return;
     *(volatile u8 *)0x846020=0;
     STATE->session.bonded=0; STATE->session.stage=0; STATE->queued=0;
+    STATE->session.features=0; STATE->session.counter=0; input_led(0);
     zero(CCCD,16);
     /* The stock path changes the Bluetooth identity. Keep the same identity
      * and return to Nintendo discovery instead. Existing flash bond remains
@@ -349,9 +434,8 @@ extern int fw_requestMtu(unsigned short connection, unsigned short mtu);
 int hook_request_mtu(unsigned short connection, unsigned short mtu)
 {
     if (!sw2_active()) return fw_requestMtu(connection, mtu);
-    /* ATT247 + six bytes of framing fits the verified 256-byte RX allocation.
-     * This does not claim support for Nintendo's preferred 512-byte MTU. */
-    *(volatile unsigned short *)0x844d8c = 247;
+    /* Both transport buffers were expanded at boot before advertising. */
+    *(volatile unsigned short *)0x844d8c = SW2_ATT_MTU;
     /* ATT+0x28: server data-pending time in 10 ms units. Stock notify
      * (0x188b0) returns 0xB4 while now-tick <= 10000*byte*16 after the last
      * discovery PDU (ATT opcodes 0x04/0x06/0x08/0x10 stamp ATT+0x1c at
@@ -359,6 +443,11 @@ int hook_request_mtu(unsigned short connection, unsigned short mtu)
      * are never delayed ~300 ms after the console's service discovery. */
     *(volatile u8 *)0x844d94 = 0;
     STATE->queued=0; zero(CCCD,16); STATE->session.stage=0;
+    STATE->session.features=0; STATE->session.counter=0;
+    STATE->configured&=(u8)~2;
+    /* Stock connect already lit the LED solid at 0xd454. Override it until
+     * encrypted Nintendo input has actually been submitted successfully. */
+    if(!fw_charging()) fw_ledState(4,2);
     bump(T_CONN); STATE->connected_at=TICKS;
     if(SW2_DEBUG[T_CONN]==1) SW2_DEBUG[T_SECS]=255;   /* overwritten at disconnect */
     return 0;
@@ -371,27 +460,58 @@ extern const u8 *fw_l2capReassemble(const u8 *p);
 const u8 *hook_l2cap(const u8 *p)
 {
     const u8 *r=fw_l2capReassemble(p);
-    u32 cid; u8 op;
+    u32 length;
     if(!r || !sw2_active() || SW2_DEBUG[T_CONN]!=1) return r;
-    cid=(u32)r[4]|((u32)r[5]<<8); op=r[6];
-    if(cid==4) {
-        if(op==0x02) bump(T_MTU);
-        else if(op==0x04 || op==0x06 || op==0x08 || op==0x10) bump(T_DISC);
-        else if(op==0x0a || op==0x0c || op==0x0e) bump(T_READ);
-        else if(op==0x12 || op==0x52) {
-            bump(op==0x12?T_WREQ:T_WCMD);
-            if(!SW2_DEBUG[T_FIRSTW]) SW2_DEBUG[T_FIRSTW]=r[7];
-        } else bump(T_OTHER);
-        SW2_DEBUG[T_LASTOP]=op;
-        if(op==0x0a || op==0x0c || op==0x12 || op==0x52) SW2_DEBUG[T_LASTH]=r[7];
-    } else if(cid==6) {
-        if(!SW2_DEBUG[T_SMP]) SW2_DEBUG[T_SMP1]=op;
-        bump(T_SMP);
-    } else if(cid==5) {
-        if(!SW2_DEBUG[T_SIG]) SW2_DEBUG[T_SIG1]=op;
-        bump(T_SIG);
-    } else bump(T_CID);
+    length=(u32)r[2]|((u32)r[3]<<8);
+    if(!SW2_DEBUG[T_L2CAP]) {
+        SW2_DEBUG[T_FIRST_CID]=r[4];
+        SW2_DEBUG[T_FIRST_LEN]=r[2];
+        if(length>0) SW2_DEBUG[T_FIRST_OP]=r[6];
+        if(length>1) SW2_DEBUG[T_FIRST_ARG0]=r[7];
+        if(length>2) SW2_DEBUG[T_FIRST_ARG1]=r[8];
+    }
+    if(length>0) SW2_DEBUG[T_LAST_OP]=r[6];
+    bump(T_L2CAP);
     return r;
+}
+
+/* Stock wrapper 0x17264 calls 0x16c04 at 0x17270 with r0 = DMA packet.
+ * Preserve the handler and return exactly; trace only plaintext control PDUs,
+ * never encrypted data or LTK material. No allocation, logging or radio calls. */
+extern int fw_llReceive(const u8 *p);
+int hook_ll_receive(const u8 *p)
+{
+    u8 op,flag;
+    if(sw2_active() && SW2_DEBUG[T_CONN]==1 && *(volatile u32 *)0x84445c &&
+       !*(volatile u8 *)0x844c3e && (p[4]&3)==3 && p[5]) {
+        op=p[6];flag=32;
+        if(op==8 || op==9 || op==14) flag=1;
+        else if(op==20 || op==21) flag=2;
+        else if(op==12) flag=4;
+        else if(op>=22 && op<=24) flag=8;
+        else if(op>=3 && op<=6) flag=16;
+        else if(op==2) flag=64;
+        else if(op==1) flag=128;
+        SW2_DEBUG[T_LL_SEEN]|=flag;
+    }
+    return fw_llReceive(p);
+}
+/* Only the FEATURE_RSP call at 0x1705a is patched. r0=queue flags,
+ * r1=stock packet [LL header,length,opcode,features[8]]. Preserve both
+ * arguments, packet bytes and stock return value. No retry behavior yet. */
+extern int fw_llEnqueue(u32 flags,const u8 *packet);
+int hook_feature_response(u32 flags,const u8 *p)
+{
+    int result;
+    int trace=sw2_active() && SW2_DEBUG[T_CONN]==1 &&
+              *(volatile u32 *)0x84445c && p[1]==9 && p[2]==9;
+    result=fw_llEnqueue(flags,p);
+    if(trace) {
+        if(result) {
+            bump(T_TX_OK);
+        }
+    }
+    return result;
 }
 
 extern void fw_requestParameters(unsigned short, unsigned short, unsigned short, unsigned short);

@@ -28,3 +28,12 @@
     .section .patch_18f5e, "ax"
     .code 16
     tjl hook_l2cap
+    .section .patch_17270, "ax"
+    .code 16
+    tjl hook_ll_receive
+    .section .patch_1705a, "ax"
+    .code 16
+    tjl hook_feature_response
+    .section .patch_d9ba, "ax"
+    .code 16
+    tjl hook_stock_radio_loop

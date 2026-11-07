@@ -15,5 +15,6 @@ ref/
 *.elf
 src/**/text.bin
 src/**/patch_*.bin
+src/**/phy_ram.bin
 __pycache__/
 *.pyc

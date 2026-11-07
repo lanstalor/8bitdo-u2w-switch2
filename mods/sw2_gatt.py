@@ -8,7 +8,8 @@ for address, original in [(0xd5b2, '08906f99'), (0xd5ba, '0890ad99'),
                           (0xd5be, '0c901b9d'), (0xd74c, 'ff97a89f'),
                           (0xd48a, '0b90a199'), (0xd496, '0b90f99b'),
                           (0xd750, 'ff97da9f'),
-                          (0x18f5e, 'ff972b9e')]:
+                          (0xd9ba, 'f2977f9c'),
+                          (0x18f5e, 'ff972b9e'), (0x17270, 'ff97c89c'), (0x1705a, 'ff97ab99')]:
     patch = Path('src/sw2/patch_%x.bin' % address).read_bytes()
     assert len(patch) == 4
     PATCHES.append((address, bytes.fromhex(original), patch))

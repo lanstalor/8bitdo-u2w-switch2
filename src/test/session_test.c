@@ -44,6 +44,12 @@ int main(void)
     sw2_input(out,0,3,0x1000,0,0,0); assert(out[2]==2);
     sw2_input(out,0,3,0x20,0,0,0); assert(out[2]==8);
     sw2_input(out,0,3,0x10,0,0,0); assert(out[2]==4);
+    /* Physical directions verified on Switch; Nintendo byte3 bits D/R/L/U. */
+    sw2_input(out,0,3,0x100,0,0,0); assert(out[3]==1);
+    sw2_input(out,0,3,0x40,0,0,0); assert(out[3]==2);
+    sw2_input(out,0,3,0x80,0,0,0); assert(out[3]==4);
+    sw2_input(out,0,3,0x200,0,0,0); assert(out[3]==8);
+    sw2_input(out,0,3,0x200|0x80,0,0,0); assert(out[3]==12);
     sw2_input(out,0,3,0x200|0x800|1|2,0,0,0xff00);
     assert(out[2]==0x70 && out[3]==0x88);
     sw2_input(out,0,3,0x100|0x400|8|4,0,0,0xff);

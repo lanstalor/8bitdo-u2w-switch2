@@ -60,7 +60,8 @@ void sw2_input(u8 out[63],u8 counter,u8 features,u32 k,u32 left,u32 right,u32 tr
     /* Position-based Nintendo mapping of the stock processed key bitmask. */
     out[2]=((k&0x2000)?1:0)|((k&0x1000)?2:0)|((k&0x10)?4:0)|((k&0x20)?8:0)
           |((k&0x800)?16:0)|(((triggers>>8)&255)>77?32:0)|((k&1)?64:0)|((k&4)?128:0);
-    out[3]=((k&0x100)?1:0)|((k&0x80)?2:0)|((k&0x40)?4:0)|((k&0x200)?8:0)
+    /* Hardware Switch test: processed0x80 is physical Left,0x40 Right. */
+    out[3]=((k&0x100)?1:0)|((k&0x40)?2:0)|((k&0x80)?4:0)|((k&0x200)?8:0)
           |((k&0x400)?16:0)|((triggers&255)>77?32:0)|((k&8)?64:0)|((k&2)?128:0);
     out[4]=((k&0x20000)?1:0)|((k&0x200000)?2:0)|((k&0x4000000)?4:0)|((k&0x2000000)?8:0);
     stick(out+5,left); stick(out+8,right);

@@ -1,5 +1,19 @@
 # 8BitDo Ultimate 2 Wireless -> Switch 2 (BLE) project
 
+Experimental on-controller firmware for the **8BitDo Ultimate 2 Wireless**,
+based on firmware 1.09. Direct Switch 2 Bluetooth registration and button input
+have been demonstrated on one controller. This is firmware, not a Windows driver.
+It is not intended for the Ultimate 2 Bluetooth, Ultimate 2C, or other models.
+
+The working implementation adds LE 2M PHY support and a 512-byte ATT MTU with
+larger transport buffers. Hold **Y while powering on in Bluetooth mode**, then
+open **Controllers → Change Grip/Order** on Switch 2 and press **L+R**.
+
+See [release installation instructions](notes/releases/v0.1.0.md) and the
+[GitHub releases](https://github.com/lanstalor/8bitdo-u2w-switch2/releases).
+Reconnect after power cycling, console wake, rumble, motion, and extended
+gameplay are not yet fully validated. The firmware uses fixed motion data.
+
 Start with `notes/PROGRESS.md` (state, key facts, tools, procedures, gotchas, next steps).
 
 - `notes/`     docs: PROGRESS, PHASE0 (static analysis), PHASE1_WINDOWS (flashing + test log), SWITCH2_PROTOCOL (protocol spec)

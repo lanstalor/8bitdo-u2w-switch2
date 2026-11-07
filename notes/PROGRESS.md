@@ -1,5 +1,294 @@
 # U2W → Switch 2 (BLE): progress and learnings
 
+## Release v0.1.0 — verified candidate 13 — 2026-11-07
+
+User confirmed "perfect it works!!!!!" and "Left and right are correct now"
+after candidate13 installation and Switch test. Candidate13 is the release
+firmware; all other controls were reported correct in preceding user tests.
+SHA256 `dcc2b955b425271f1193bb4a8ee49918fdb38b7f51b99be2ec1e36f9d52c07d0`.
+Release instructions: notes/releases/v0.1.0.md. Source and release publication
+authorized by user; publishing v0.1.0 as experimental prerelease.
+Older status entries below are chronological investigation history.
+
+## Release preparation / mapping correction — 2026-11-07
+
+User reports horizontal D-pad is the only mismatch found in further testing.
+Candidate13 built and integrity/GATT verified; fivehosttests passed afterfix.
+SHA256 `dcc2b955b425271f1193bb4a8ee49918fdb38b7f51b99be2ec1e36f9d52c07d0`.
+Candidate13 FLASHED AND VERIFIED (2/36sectors,6000/17000,c4ack/reset).
+AwaitphysicalLeft/Rightcheck. Onlytwo mappingbytes andfourchecksumbytes
+differ fromcandidate12; transport/pairing unchanged.
+Draftrelease instructions notes/releases/v0.1.0.md andpackage staging
+firmware/release-v0.1.0 prepared. Nothingpublishedyet. Userauthorization to
+publish GitHubrelease persists; finish aftermappingverification.
+
+User requested a GitHub release, then discovered D-pad Left/Right reversed.
+No release, tag, commit or push has been made yet. Candidate12 stays installed.
+Source fix swaps processed0x80/0x40 to Nintendo Left/Right bits4/2 in session.c;
+individual direction and diagonal assertions added. All5hosttests pass.
+Fix is not yet built/flashed or physically verified. Await user results from
+Switch built-in button test and stick calibration preview before final build.
+Prior "allbuttons working" means registration/input succeeded, not correct
+mapping of every control. Do not publish candidate12 as fully correct.
+Release target origin https://github.com/lanstalor/8bitdo-u2w-switch2.git,
+localmain ahead of origin/main by6commits (fast-forward push possible).
+GitHub CLI installed C:/Program Files/GitHub CLI/gh.exe, authenticated lanstalor.
+Connector lacksreleaseupload; useCLI. Noexisting releases listed. Keep backup,
+captures and vendorrawimages outof source; package finalverifiedfirmware only.
+
+## CONFIRMED WORKING — candidate 12 — 2026-11-07
+
+User confirmed after the candidate12 console test: "its connected and all
+buttons work now!!!!!! wow". This is the first verified Switch2 registration
+and working physical button input. Do not connect from PC or request shutdown
+for diagnostics while the user is using the successful console connection.
+
+Working image: `firmware/mod-sw2-candidate-12-v109.bin`.
+SHA256 `112d80d4c31472ed077bc3fd04629f5c76b2b04d9892cb6681ad7a9d5c3c47a3`.
+Preserved copy: `firmware/mod-sw2-working-v109.bin` (same hash).
+Successful startup: physical Bluetooth mode, power on holding Y; Switch2
+Controllers -> Change Grip/Order, L+R. Working changes include real2M PHY
+callbacks/RAM overlay and MTU512 with expanded guarded transport buffers.
+Candidate10 reached2M but stalled after MTUrequest512; candidate12 resolved
+registration and input. All5hosttests, firmwarechecks/GATTvalidator, and live
+PC2M/MTU512 full-size incoming packet test passed before console success.
+Reconnect after powercycle, persistent bond recovery, wake, and extended
+gameplay have NOT yet been independently confirmed. No further flash needed
+for the now-confirmed primary connection/button objective.
+
+## Current Codex session (2026-11-07)
+
+Candidate12 FLASHED/VERIFIED after finalagentreview(no blocker).
+Seven/36 sectors written and verified,c4acknowledged,resetcompleted.
+PCfullRXtest PASSED:MTU512/PHY2,ninecommands including509bytevalue/512ATT,
+176reports/3sec,guardflags0. Largestresponse150,not full512TX.
+Logs captures/candidate-12-pc-probe.txt andcandidate-12-pc-diag.txt.
+PCdisconnected; userasked freshbootYconsoletest thenSwitchoffifnoicon,
+retaincontrollerpower. Awaitoutcome beforePCread.
+SHA256 `112d80d4c31472ed077bc3fd04629f5c76b2b04d9892cb6681ad7a9d5c3c47a3`.
+512MTU support: RX840d8c usable520+8canary;TX840f9c usable520+8canary,
+end8411ac. These overlay2.4G-only code under existingd9ba guard, restored
+fromstockflash onreset. Configptr844dd4/dd8,capacities844ddc/dde. MTU844d8c
+512 atboot/connect. Customwrite lengthcap512,normalizedcommand<=64 unchanged.
+Diagnosticcc:18CID19firstop20length21/22args23MTUlo24maxPHY25MTUhi,
+26guardflags(1RX,2TX),27featurequeuecount,28lastL2CAPop,29LLclasses30cc.
+All5hosttests incl509valuewrite/canarytests pass, build/firmware/GATTchecks pass.
+NextPCprobe MUST use `--mtu512` to require512 andsend509bytevalue (ATT512),
+then readtraceguards. Bufferaudit analysis/q/mtu-ram-cave.txt. Allcallchains
+guarded2bc; scanrawpointermatches numeric/tables. Staticaudit limitationsapply.
+
+Candidate11 console confirmsstall:onlyATTMTUrequest512,CID4/op2/len3,args0002;
+PHY2,20sec,no commands. Raw
+`00 00 00 00 00 00 00 3b 00 00 00 00 00 13 00 02 14 01 04 02 03 00 02 02 02 00 00 01 02 e9 cb`.
+Saved `captures/candidate-11-console-diag.txt`. PCread closed.
+
+Candidate11 FLASHED AND VERIFIED, PC PASSED; awaiting console validation.
+Seven/36 sectors written and verified, c4 acknowledged, reset completed.
+PC2M passed8commands,169reports/3sec. FirstL2CAP CID4/op2/len3/args0f02:
+peerMTU527, negotiated247. Tracecb validated. Logs candidate-11-pc-probe.txt
+and candidate-11-pc-diag.txt under captures. PC disconnected; user asked
+freshbootY/consolefirst test then Switch off retainingcontrollerpower.
+SHA256 `441e6a6342bfaffd1a8449d1968ac52e12b791c34dd00deaaa29ec165f6f59f8`.
+Keeps2M behavior; diagnosticcb replaces FIFO/mask fields with firstL2CAP
+CIDlow18,opcode19,lengthlow20,parameters21/22/25; PHY23/24 unchanged.
+First-packet bounds/freeze tested including MTU512 request; all5suites/build
+and firmwarechecks passed. NeedPC validation thenconsolefirst attempt.
+
+Candidate10 console FIRST PROGRESS:PHY2 reached andL2CAP1 (previous0).
+Stillnoicon/no commands/encryption.25sec,queueflags7,SWconsumer3.
+Raw `00 00 00 00 00 00 00 3b 00 00 00 00 00 13 00 02 19 01 3d 01 07 01 03 02 02 00 00 01 02 e9 ca`.
+Saved `captures/candidate-10-console-diag.txt`. PCread closed afterward.
+Needidentify singleL2CAP frame; MTU is hypothesis only. Agent audited stock:
+MTU_REQ1814a responds local844d8c=247,shared18004 storesmin(local,peer)844d8e.
+RX845b80 andTX845c80 are256byte allocations referenced byL2CAP844dc8.
+DoNOT merely advertise512 without correctbuffers; firstfragment copy lacks
+obvious allocationbound. Customwritehandler also rejects>247.
+
+Candidate10 FLASHED AND VERIFIED, live PC2M PASSED; awaiting console test.
+Seven/36 sectors written and verified, c4 acknowledged, reset completed.
+PC negotiated PHY2, eight command replies passed,182reports/3sec. First
+features3d01;PHYcurrent/max2;queueflags7. Re-advertisement and second PC
+diagnostic connection succeeded after2M session. This is first live2M proof.
+Raw: `16 0c 02 00 08 08 03 3b 00 00 00 00 f7 13 00 02 09 36 3d 01 07 01 7f 02 02 00 00 01 01 ef ca`.
+Logs `captures/candidate-10-pc-probe.txt`, `captures/candidate-10-pc-diag.txt`.
+PC disconnected; user instructed fresh controller bootY then Switch test,
+Switch off if no icon but retain controller power. Await outcome before PCread.
+SHA256 `b0a0b0450f32a165c6265f4117dac6f78f44f41586662733c4ed35e136ec72e1`.
+Final review found no implementation blocker; adopted stronger guard checking
+installed radio callbackslot identity, independent of GATT table changes.
+All five suites rebuilt/passed afterward. SDK hardware compatibility remains
+empirical; some radio constants lack stockliteral matches. PC ordinary1M
+connectivity alone will not establish actual2M operation or1M return path.
+Proper2M port in phy_ram.c (Telink SDK register vectors): three callbacks at
+slots844d3c(radio),844b88(instant),844b8c(connection start). Uses stock
+resetConnPhy17818, current/next844b7d/e, PHYstate844d30, eventpending8449e0,
+adjustedsettletable844d48->800f04 (NO SDK minus1). Installs268byte RAM overlay
+at840c04 linkedlowVMAc04, replacing only2.4G parser body; preserves literals
+fromd64. Soleknowncaller2bc is gated atd9ba duringY-mode because physical
+mode GPIO changes before stock debounce resets. Callback pointers andfeature
+bit8 published only after copy under IRQmask800643. Stockflashoriginalc04 is
+untouched and restored byreset. Fivehosttests nowpass, including register
+vectors/instant/start callback behavior and normal/Yradio loop guard. Static
+audit found no interiorcodepointers; not proof against all computedreferences.
+Newdiagca keeps queueflags but bytes23/24=current/maxconnectionPHY.
+
+Candidate9 console FAILED:31sec,zeroL2CAP. Feature3d00 queued1, SWtarget1,
+consumer1, flags7, FIFOempty byconnectionage0sec. Other0connupdate,param2,
+classes e1. Captured `captures/candidate-9-console-diag.txt`:
+`00 00 00 00 00 00 00 3b 00 00 00 00 00 13 00 02 1f 00 3d 00 07 01 01 00 00 00 00 01 02 e1 c9`.
+Thus reply not persistently queued. Still not peerACK proof. Newprimary
+corroboration https://github.com/joypad-ai/joypad-os/blob/main/CHANGELOG.md
+unreleased Switch2 BLE output describes PicoW silent preGATT link and2M
+unsupported vs workingnRF52840. Their referenced private .dev verdict404.
+This strengthens2M hypothesis but does not prove cause on thisTelink.
+
+Candidate9 FLASHED AND VERIFIED, PC PASSED; awaiting console test.
+Seven/36 sectors written and verified, c4 acknowledged, reset completed.
+Live PC:8commands,190reports/3sec; FIFO flags7(target captured,SWconsumed,
+totalempty),empty observed at connectionage0sec. Target1,lastconsumer156,
+lastdepth0,mindepth0. PC trace saved `captures/candidate-9-pc-diag.txt`,
+probe `captures/candidate-9-pc-probe.txt`. PC disconnected; user asked for
+console-first reboot/test then Switch off while controller remains powered.
+SHA256 `5207b0546511983c8fead357c19b65eeff2366f68ed1a10eae87b6763adf9172`.
+All four host suites/TC32 build/three boot checks/GATT validator passed.
+Same freshF6 identity and protocol. Diagnosticc9 keeps first TWO feature bytes;
+20 TXflags(1target,2softwareconsumed,4totalempty),21producer target,
+22lastconsumer,23lastdepth,24mindepth,25ageatfirstempty(255never).
+Uses stock interrupt-safe `u8 getTxFifoNumber(void)` atRAM0x2ff8; SWproducer
+8448f6,consumer8448f7, HWptr800c2a/b. Snapshot only firstconnection while app
+connected and a FEATURE_RSP enqueue succeeded. Main-loop drain evidence is
+NOT peer ACK proof. SDK/stock audit by fresh agent located HW enqueue0x3446,
+SWconsume0x344e; HWreadptr is also restored each event from retained844a2e,
+so no direct ACK claim. No additional RAM allocations or radio-control hooks.
+
+LATEST: candidate8 FLASHED AND VERIFIED, PC PASSED; console FAILED.
+SHA256 `eb7acf6f9b73e78dea54bf03358ce8bd9a0162137b7b889b048e700e28457837`.
+Six/36 sectors written, all verified, c4 acknowledged, reset sent. All four
+host suites and firmware integrity/GATT checks passed. Behavior experiment:
+Y-mode address xor changes0x80->0x40 (expected suffix36->f6), factory/bond
+flash untouched. Handshake still copies actual LL address. Diagnostic0xc8
+retains eight feature bytes and successful enqueue count; bytes26/28 now
+capture first other LL opcode/parameter, allowing connection-update to be
+superseded by a later other opcode. No protocol/PHY/timing changes.
+PC observed new identity `E4:17:D8:BC:66:F6`, eight command replies passed,
+177reports/3sec. Trace0xc8 works; other opcode0=CONNECTION_UPDATE_IND,param1.
+FEATURE_RSP queued1, mask3d00000000000000. Saved candidate-8-pc-probe.txt and
+candidate-8-pc-diag.txt under captures. PC disconnected; user instructed to
+reboot controller and test Switch first, then power Switch off while retaining
+controller power. Await this result before another PC diagnostic connection.
+Console result now captured:20sec,zeroL2CAP,FEATURE_RSP queued1,mask3d00000000000000.
+Other opcode0=CONNECTION_UPDATE_IND,param2; no other nonzero other-opcode
+observed. Classes e1:feature,other,terminate,map. No length/version/PHY/encryption.
+Raw: `00 00 00 00 00 00 00 3b 00 00 00 00 00 13 00 02 14 00 3d 00 00 00 00 00 00 00 00 01 02 e1 c8`.
+Saved `captures/candidate-8-console-diag.txt`. New identity did not fix the
+stall. PC diagnostic connection closed, controller still on, Switch off.
+Next read-only audit: stock TX FIFO progression/completion instrumentation;
+fresh reviewer investigating exact hook/ABI. No TX completion or2M evidence yet.
+
+Candidate7 console FAILED:56sec,zeroL2CAP/no commands/encryption/bond.
+FEATURE_RSP attempt1 queued1 return1, actual features3d00000000000000.
+LLclass e1 includes other, so capture exact opcode before further inference.
+Raw: `00 00 00 00 00 00 00 3b 00 00 00 00 00 13 00 02 38 00 3d 00 00 00 00 00 00 00 01 01 01 e1 c7`.
+Saved `captures/candidate-7-console-diag.txt`. Queue failure ruled out for
+this attempt, over-air delivery still unproven. Fresh reviewer recommends
+new identity plus exact other-opcode logging as next controlled experiment.
+
+Candidate 7 response tracing is FLASHED AND VERIFIED.
+Image: `firmware/mod-sw2-candidate-7-v109.bin`, SHA256
+`bde31b7af7a6113229520b15f3efe3a45a8c7c440e7ce9b62d143a291a09a6a8`.
+All four host suites pass, TC32 cave usage7916/12032 bytes, firmware checks
+and59-attribute GATT validation pass. The0x1705a wrapper preserves the packet,
+arguments and return. Diagnostic layout0xc7 records eight actual feature bytes,
+attempt/success counts and queue return; LL opcode classes replace the short
+opcode list. First-connection evidence remains frozen across PC reconnection.
+USB installation wrote5/36 sectors (0x5000,0x6000,0x8000,0x12000,0x17000),
+verified all sectors, received c4 acknowledgement and reset. Next: PC probe and
+trace validation, then a fresh console-first attempt with retained trace read.
+Candidate7 PC validation PASSED: eight commands, MTU247,196 reports/3seconds.
+FEATURE_RSP observed once, queued once, return1; actual bytes
+`3d 00 00 00 00 00 00 00`. First trace survived diagnostic connection2.
+Raw: `16 0c 02 00 08 08 03 3b 00 00 00 00 f7 13 00 02 07 36 3d 00 00 00 00 00 00 00 01 01 01 e7 c7`.
+Logs: `captures/candidate-7-pc-probe.txt`, `captures/candidate-7-pc-diag.txt`.
+PC connection closed; user asked for fresh console-first test. Do not connect
+from PC until user has powered off Switch, preserving first-connection trace.
+
+Fresh-review follow-up: 2M is NOT established as mandatory or the cause. Before
+porting PHY support, instrument the stock FEATURE_RSP enqueue at0x1705a
+(`ff97ab99`, call0x163b4, r0=0x8040, r1=packet). Packet starts `03 09 09`,
+followed by8 feature bytes. The caller ignores the result; enqueue returns0
+when full and1 on success. A missing reply is therefore another testable cause,
+not an observed failure yet. Record actual outgoing features, attempt count,
+and queue result, frozen across PC reconnect. Queue success still does not
+prove over-air transmission/acknowledgement. Independent agent review requested
+by the user agrees this observation should precede a PHY port.
+
+- Read Claude's final handoff and project transcript. USB checksum inspection
+  confirmed all 36 sectors match candidate 5. Inspection sent no flash writes or
+  commit; reset exited the update session.
+- Repeated console attempt: first connection 19 seconds, zero L2CAP PDUs,
+  no commands/LTK/encryption; disconnect 0x13 when the user powered off Switch 2.
+  Raw diagnostic: `00 00 00 00 00 00 00 3b 00 00 00 00 00 13 00 02 00 00 00 00 00 00 00 00 00 00 00 00 00 13 00`.
+  PC diagnostic connection then caused a further vibration. Stock link-up
+  vibration and solid LED do not establish Nintendo pairing.
+- Candidate 6 built and FLASHED: `firmware/mod-sw2-candidate-6-v109.bin`,
+  SHA256 `572c2d68788dea855e3627a255d6dc071940079aed8c8b9a9a1d58c1aff42fcf`.
+  Adds Claude's proposed LL RX wrapper at 0x17270 (asserted stock `ff97c89c`),
+  preserving the original 0x16c04 handler and its return. Records plaintext LL
+  control opcodes only on connection 1; no new RAM allocation or radio requests.
+  Diagnostic bytes 15..30 now use the versioned 0xc6 layout documented in sw2.c;
+  sw2_diag.py recognizes both candidate 5 and 6. RX capture cannot prove TX replies.
+- LED change: reassert searching while unconnected or not Nintendo-ready;
+  solid only after bonded + encrypted + feature-enabled + subscribed input is
+  successfully submitted. Reassertion counters other stock LED setters. USB
+  indicators retain stock behavior. Physical LED behavior remains unverified.
+  Clear per-connection feature mask and report counter on connect/disconnect/pair.
+- Verification: all four native suites pass with ASan/UBSan and warnings as errors;
+  TC32 build uses 7800/12032 cave bytes; all three boot checks and GATT verifier pass.
+  `tools/test_sw2.sh` runs the four suites without PowerShell/WSL quoting hazards.
+- Flash: 6/36 sectors written (0x5000,0x6000,0x8000,0x12000,0x13000,0x17000),
+  all sector checks verified, c4 acknowledged and reset sent successfully.
+- Live candidate 6 PC validation PASSED: eight commands, MTU247, 150-byte reply,
+  195 input reports in 3 seconds. LL RX trace captured FEATURE_REQ, LENGTH_REQ,
+  VERSION_IND, two connection updates, two channel maps and termination 0x13.
+  L2CAP total54, writes13, SMP0. Trace preserved through diagnostic connection2.
+  Raw: `16 0c 02 00 08 08 03 3b 00 00 00 00 f7 13 00 02 07 36 0d 00 08 08 14 0c 00 00 01 01 02 13 c6`.
+  Logs: `captures/candidate-6-pc-probe.txt`, `captures/candidate-6-pc-diag.txt`.
+  User observed blinking at startup.
+- Live candidate 6 console test FAILED, but the trace now locates the stall:
+  47 seconds, 10 LL control RX PDUs, first FEATURE_REQ (0x08), followed by
+  repeated CHANNEL_MAP_IND (0x01), finally TERMINATE_IND (0x02), reason0x13.
+  Still ZERO L2CAP, commands, SMP, LTK or encryption. No LENGTH_REQ, VERSION_IND
+  or PHY negotiation among the first seven recorded control PDUs. The final
+  three are not all retained, so do not infer their precise sequence.
+  Raw: `00 00 00 00 00 00 00 3b 00 00 00 00 00 13 00 02 2f 00 00 00 0a 08 01 01 01 01 01 01 02 13 c6`.
+  Saved in `captures/candidate-6-console-diag.txt`. User reported vibration when
+  Change Grip/Order opened, followed by blinking (rather than misleading solid).
+  No controller icon appeared. PC diagnostic connection is closed.
+- Stronger hypothesis: missing LE 2M PHY support. Stock retained RAM initializer
+  at payload0x4a04 (runtime0x844a04) contains feature mask `3d 00 00 00 00 00 00 00`;
+  bit8 (LE2M) is clear. Stock FEATURE_RSP construction at0x16fbc reads this mask
+  using literals0x1722c/0x17230. Only direct base literals found are reads in the
+  feature/PHY dispatcher; this does not prove absence of indirect writes.
+  espp's working implementation reports a console PHY switch to2M:
+  https://components.espressif.com/components/espp/switch2_pro/versions/1.4.0/readme
+- SDK optional `blc_ll_init2MPhy_feature` installs BOTH radio switch and PHY
+  update callbacks as well as setting bit8. Merely setting the bit would advertise
+  a capability the firmware cannot yet demonstrate. Exact SDK radio-switch
+  instruction signatures and its 2M register constant0x06432a04 were not found
+  in stock1.09 or1.10. This is negative signature evidence, not proof that no
+  alternate implementation exists. SDK/stock LL layouts differ; do not link its
+  whole controller objects at guessed addresses.
+- Investigation artifacts (local/ignored): `analysis/sdk-disasm.txt`,
+  `sdk-symbols.txt`, `phy-sdk.o`, `phy-code.bin`, `ll-conn-phy-sdk.o`.
+  Confirmed stock addresses useful for further audit: PHY state0x844d30,
+  connection-PHY state0x844b7c (literal0x16360), PHY-instant callback slot0x844b88
+  (literal0x16ab4). These are incomplete mappings, not an implementation recipe.
+  No PHY support changes were flashed. Candidate6 remains installed.
+- Next: verify actual outbound FEATURE_RSP and identify/port the optional 2M
+  radio/instant callbacks with proven memory and timing compatibility. RX-only
+  evidence cannot establish which response the console rejects. Never claim
+  Switch success from mocks, enqueue success, vibration, or LEDs alone.
+
 Last updated: 2026-11-07. Goal: make the user's own 8BitDo Ultimate 2 Wireless (dongle lost) work with a Switch 2
 over Bluetooth by patching the controller firmware so it behaves like a Switch 2 Pro Controller.
 Detailed logs: `PHASE0.md` (static analysis), `PHASE1_WINDOWS.md` (flashing + test log), `SWITCH2_PROTOCOL.md` (protocol spec

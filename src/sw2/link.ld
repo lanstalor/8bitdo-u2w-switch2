@@ -17,6 +17,11 @@ fw_stockPairButton = 0xd708;
 fw_loadBond = 0x1a3b4;
 fw_saveBond = 0x1a560;
 fw_compactBonds = 0x1a130;
+fw_llEnqueue = 0x163b4;
+fw_getTxFifoNumber = 0x2ff8;
+fw_stockRadioLoop = 0x2bc;
+fw_resetConnPhy = 0x17818;
+fw_llReceive = 0x16c04;
 fw_l2capReassemble = 0x18bb8;
 fw_ledState = 0xf60c;
 fw_charging = 0x10e6c;
@@ -32,6 +37,9 @@ SECTIONS {
   .patch_d48a 0xd48a : { *(.patch_d48a) }
   .patch_d496 0xd496 : { *(.patch_d496) }
   .patch_18f5e 0x18f5e : { *(.patch_18f5e) }
+  .patch_17270 0x17270 : { *(.patch_17270) }
+  .patch_1705a 0x1705a : { *(.patch_1705a) }
+  .patch_d9ba 0xd9ba : { *(.patch_d9ba) }
   .data 0x0 : { *(.data .data.*) *(.bss .bss.*) *(COMMON) }
   /DISCARD/ : { *(.comment) }
 }
