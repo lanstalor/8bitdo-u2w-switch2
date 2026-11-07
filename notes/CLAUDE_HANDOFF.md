@@ -1,5 +1,9 @@
 # Claude Code handoff — Ultimate 2 Wireless to Switch 2
 
+> Historical handoff, superseded by [CURRENT_HANDOFF.md](CURRENT_HANDOFF.md).
+> The controller now works on Switch 2 with released v0.1.0/candidate13.
+> For restoration use [RECOVERY.md](RECOVERY.md). Preserve this file as history.
+
 Updated 2026-11-07. Read this before proposing another flash. This is a mature reverse-engineering effort, not a stock controller pairing question.
 
 ## Request and current outcome

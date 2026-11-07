@@ -14,7 +14,9 @@ See [release installation instructions](notes/releases/v0.1.0.md) and the
 Reconnect after power cycling, console wake, rumble, motion, and extended
 gameplay are not yet fully validated. The firmware uses fixed motion data.
 
-Start with `notes/PROGRESS.md` (state, key facts, tools, procedures, gotchas, next steps).
+Start with [CURRENT_HANDOFF.md](notes/CURRENT_HANDOFF.md) for the verified state
+and implementation constraints, and [RECOVERY.md](notes/RECOVERY.md) for returning
+to stock. `notes/PROGRESS.md` retains the full investigation history.
 
 - `notes/`     docs: PROGRESS, PHASE0 (static analysis), PHASE1_WINDOWS (flashing + test log), SWITCH2_PROTOCOL (protocol spec)
 - `tools/`     flashers (`u2wflash.py`, `u2wboot.py`), mod builders (`mkmod.py`, `fixcrc.py`), BLE and Ghidra helpers, capture scripts

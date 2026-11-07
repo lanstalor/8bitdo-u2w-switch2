@@ -1,5 +1,9 @@
 # Handoff to Codex: Switch 2 console stalls below L2CAP
 
+> Historical handoff, superseded by [CURRENT_HANDOFF.md](CURRENT_HANDOFF.md).
+> The controller now works on Switch 2 with released v0.1.0/candidate13.
+> For restoration use [RECOVERY.md](RECOVERY.md). Preserve this file as history.
+
 Updated 2026-11-07 by Claude. Read this together with `notes/CLAUDE_HANDOFF.md`
 (your earlier handoff) and the newest sections of `notes/PROGRESS.md`.
 
