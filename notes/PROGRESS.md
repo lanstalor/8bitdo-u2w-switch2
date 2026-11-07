@@ -437,3 +437,13 @@ console Change Grip/Order with L+R -> on failure, do NOT power off, run
   into the runtime block at 0x84710c+46 (only CCCD bytes exposed). Disconnect
   restores the stock LED pattern. Five sectors change (0x13000 for the hook).
   Host tests cover the trace, freeze and LED. Not yet flashed.
+
+### Candidate 5 console result (Claude, 2026-11-07 ~14:00) - handed to Codex
+
+- Console connected, held the link 61 s, sent ZERO L2CAP PDUs (no ATT MTU,
+  discovery, writes, SMP or signalling), no LTK request; disconnect 0x13 when the
+  console slept. Trace validated with a PC-first session (MTU 1, discovery 38,
+  reads 2, write req 5, write cmd 8). The stall is below L2CAP.
+- Next step designed but not built: LL control RX trace by patching `tjl 0x16c04`
+  at 0x17270 (stock `ff97c89c`). Full details, evidence and hypotheses in
+  `notes/CODEX_HANDOFF.md`.
