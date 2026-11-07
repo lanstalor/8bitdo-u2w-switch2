@@ -1,0 +1,19 @@
+# Sensitive or not ours to publish: keep local only.
+# raw flash dump of the controller (bond keys, MAC, calibration)
+backup/
+# USB traces of the official updater (also contain other devices on the same hub)
+captures/
+# 8BitDo vendor firmware images and images derived from them
+firmware/
+# Ghidra exports / decompilations of the vendor firmware
+analysis/
+# third-party clones (2C reverse-engineering repo, Telink B80 SDK): re-clone, see README
+ref/
+
+# build outputs
+*.o
+*.elf
+src/**/text.bin
+src/**/patch_*.bin
+__pycache__/
+*.pyc
