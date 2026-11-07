@@ -70,6 +70,9 @@ int main(void)
     assert(STATE->session.counter==1);
     notify_status=0xb4;TICKS+=240001;hook_reports();assert(STATE->session.counter==1);
     disconnect_cb(4,rand,1);assert(!*(u32 *)0x84445c && !CCCD[2] && advertised[16]==0x81);
+    /* Keep-awake: unconnected ticks within 4 min set the stock pairing-mode flag; after that they don't. */
+    *(u8 *)0x846013=0;hook_reports();assert(*(u8 *)0x846013==1);
+    *(u8 *)0x846013=0;TICKS=STATE->idle_from+0xE4E1C000u;hook_reports();assert(*(u8 *)0x846013==0);
     assert(!memcmp(advertised+17,"\1\2\3\4\5\6",6));
     KEYS=KEY_Y_MASK;hook_set_gatt(0);hook_set_adv(0,0);KEYS=0;
     assert(STATE->session.bonded && STATE->stored && STATE->session.stage==0);

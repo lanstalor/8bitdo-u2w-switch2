@@ -80,9 +80,18 @@ extern int fw_notify(unsigned short connection,unsigned short handle,const u8 *d
 typedef struct {
     Sw2Session session;
     u32 last_report;
+    u32 idle_from;      /* TICKS at boot / last disconnect: keep-awake window start */
     u8 queued, channel, stored, configured;
     u8 own[6];
 } Sw2Runtime;
+/* Stock key scanner (0xf298) powers the pad off after a fixed count of idle
+ * scans while unconnected (threshold u16 @0x845a1c, ~1-2 min) and key presses
+ * do NOT reset that count while unconnected. The stock pairing-mode flag
+ * @0x846013 zeroes the counter every scan; the stock connect handler clears
+ * the flag. Hold it for 4 min after boot/disconnect so a failed console attempt
+ * leaves time to read the post-mortem record with tools/sw2_diag.py. */
+#define KEEP_AWAKE (*(volatile u8 *)0x846013)
+#define KEEP_AWAKE_TICKS 0xE4E1C000u   /* 240 s at 16 MHz (u32 tick wraps at 268 s) */
 typedef char state_size_check[sizeof(Sw2Runtime)<=68?1:-1];
 #define STATE ((Sw2Runtime *)0x84710c)
 #define QUEUE ((u8 *)0x84618c)
@@ -132,6 +141,7 @@ static void disconnected(u8 event,u8 *p,int n)
     if(p && n>0) SW2_DEBUG[D_DISC]=p[0];
     *(volatile u32 *)0x84445c=0;
     STATE->queued=0; STATE->session.stage=0; zero(CCCD,16);
+    STATE->idle_from=TICKS;
     advertise(); fw_enableAdv(1);
 }
 static void load_bond(void)
@@ -238,7 +248,10 @@ void hook_reports(void)
     if(!STATE->configured) {
         fw_registerEvent(4,disconnected); STATE->configured=1;
     }
-    if(!*(volatile u32 *)0x84445c) return;
+    if(!*(volatile u32 *)0x84445c) {
+        if((u32)(TICKS-STATE->idle_from)<KEEP_AWAKE_TICKS) KEEP_AWAKE=1;
+        return;
+    }
     if(STATE->queued) {
         prefix=STATE->channel==0x16?14:0;
         if(!(CCCD[STATE->channel==0x16?6:4]&1)) return;
@@ -330,6 +343,7 @@ int hook_set_adv(u8 *p, u8 len)
     *(volatile u8 *)0x844f28=0;
     *(volatile u8 *)0x844f29=0;
     fw_registerLtk(ltk_request);
+    STATE->idle_from=TICKS;
     load_bond(); advertise(); return 0;
 }
 

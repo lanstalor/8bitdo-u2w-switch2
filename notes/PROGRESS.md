@@ -395,3 +395,20 @@ Procedure: boot with Y held -> `tools/sw2_command_probe.py` (transport, 150-byte
 reply, then 15 s of decoded input reports: press buttons / move sticks) ->
 console Change Grip/Order with L+R -> on failure, do NOT power off, run
 `tools/sw2_diag.py` and paste its output into the notes.
+
+### Candidate 3 PC results and candidate 4 (Claude, 2026-11-07 ~12:40)
+
+- Candidate 3 live PC probe: all 8 command exchanges pass with MTU 247 and no
+  delay; 63-byte input report streams at 65/s without link encryption; button
+  bits and both sticks change with physical input (mapping/direction still to be
+  confirmed against the console). Post-mortem record read back correctly after
+  the session: 8 accepted / 8 replied, MTU 247, last disconnect 0x13.
+- The controller powered itself off twice while idle. Cause (stock, not Y-mode):
+  key scanner 0xf298 counts idle scans in u16 @0x845fd4; unconnected threshold
+  @0x845a1c (~1-2 min); key presses do NOT reset the count while unconnected.
+  Pairing-mode flag @0x846013 (set by the stock pair-button path 0xf734) zeroes
+  the counter every scan and is cleared by the stock connect handler 0xd448.
+- Candidate 4 (`firmware/mod-sw2-candidate-4-v109.bin`, SHA256 1d836aaa2acac8d4...)
+  = candidate 3 + Y mode sets that flag while unconnected for 4 min after boot or
+  disconnect (`idle_from` in Sw2Runtime), so a failed console attempt leaves time
+  to run `tools/sw2_diag.py`. Host tests cover the window. NOT yet flashed.
