@@ -2,12 +2,18 @@
 # attribute layout with handles, and the values of readable characteristics. Read-only: no writes.
 # Usage: bleprobe.py [name-substring or address] [--scan-secs N]
 import asyncio
+import argparse
 import sys
 
 from bleak import BleakClient, BleakScanner
 
-target = next((a for a in sys.argv[1:] if not a.startswith("--")), "8BitDo")
-scan_secs = float(sys.argv[sys.argv.index("--scan-secs") + 1]) if "--scan-secs" in sys.argv else 15
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument('target', nargs='?', default='8BitDo')
+parser.add_argument('--scan-secs', type=float, default=15)
+parser.add_argument('--pair', action='store_true', help='Complete Windows pairing before service discovery')
+parser.add_argument('--connect-secs', type=float, default=90)
+args = parser.parse_args()
+target, scan_secs = args.target, args.scan_secs
 
 
 async def main():
@@ -19,7 +25,9 @@ async def main():
     if dev is None:
         raise SystemExit(f"no advertising device matching {target!r} (is it in pairing mode?)")
     print(f"found {dev.address} {dev.name!r}; connecting...", flush=True)
-    async with BleakClient(dev, timeout=45) as c:
+    # Firmware swaps keep the same MAC; a cached stock table would hide the new services.
+    async with BleakClient(dev, timeout=args.connect_secs, pair=args.pair,
+                           winrt={"use_cached_services": False}) as c:
         print(f"connected; negotiated ATT MTU = {c.mtu_size}")
         for s in c.services:
             print(f"service h{s.handle:#06x} {s.uuid}")
